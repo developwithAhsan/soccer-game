@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Football Game with Live Chat</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        :root {
+            --chat-width: 5.5cm;
+        }
+        
+        .chat-section {
+            width: var(--chat-width);
+            min-width: var(--chat-width);
+            max-width: var(--chat-width);
+        }
+        
+        .game-section {
+            width: calc(100vw - var(--chat-width));
+        }
+        
+        .chat-messages {
+            scrollbar-width: thin;
+            scrollbar-color: #4B5563 #1F2937;
+        }
+        
+        .chat-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .chat-messages::-webkit-scrollbar-track {
+            background: #1F2937;
+        }
+        
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: #4B5563;
+            border-radius: 3px;
+        }
+        
+        .chat-messages::-webkit-scrollbar-thumb:hover {
+            background: #6B7280;
+        }
+        
+        .team-a-msg {
+            color: #EF4444;
+        }
+        
+        .team-b-msg {
+            color: #3B82F6;
+        }
+        
+        .system-msg {
+            color: #F59E0B;
+            font-style: italic;
+        }
+        
+        #gameCanvas {
+            border: 3px solid #374151;
+            border-radius: 8px;
+            background: #065F46;
+        }
+        
+        .goal-animation {
+            animation: goalPulse 3s ease-in-out;
+        }
+        
+        @keyframes goalPulse {
+            0% { transform: scale(0); opacity: 0; }
+            20% { transform: scale(1.2); opacity: 1; }
+            80% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0.8); opacity: 0; }
+        }
+        
+        .voice-indicator {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white font-sans overflow-hidden">
+    <div id="gameContainer" class="flex h-screen">
+        <!-- Live Chat Section - Full Left Side -->
+        <div class="chat-section bg-gray-800 border-r-2 border-gray-700 flex flex-col">
+            <!-- Chat Header -->
+            <div class="bg-gray-700 p-3 border-b border-gray-600">
+                <h2 class="text-lg font-bold text-center">
+                    <i class="fas fa-comments mr-2"></i>Live Chat
+                </h2>
+                <div class="flex justify-center mt-2 space-x-2">
+                    <button id="allChatTab" class="chat-tab px-3 py-1 text-xs bg-blue-600 rounded">All</button>
+                    <button id="teamChatTab" class="chat-tab px-3 py-1 text-xs bg-gray-600 rounded">Team</button>
+                </div>
+            </div>
+            
+            <!-- Voice Controls -->
+            <div class="bg-gray-700 p-2 border-b border-gray-600">
+                <div class="flex justify-between items-center text-xs">
+                    <button id="toggleMic" class="voice-btn flex items-center space-x-1 px-2 py-1 bg-red-600 rounded">
+                        <i class="fas fa-microphone-slash"></i>
+                        <span>Mic Off</span>
+                    </button>
+                    <button id="toggleSpeaker" class="voice-btn flex items-center space-x-1 px-2 py-1 bg-green-600 rounded">
+                        <i class="fas fa-volume-up"></i>
+                        <span>On</span>
+                    </button>
+                </div>
+                <div id="voiceStatus" class="text-xs text-gray-400 text-center mt-1">Voice: Disconnected</div>
+            </div>
+            
+            <!-- Chat Messages -->
+            <div id="chatMessages" class="chat-messages flex-1 p-3 overflow-y-auto space-y-2 text-sm">
+                <div class="system-msg">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    Welcome to Football Game! Join a team to start playing.
+                </div>
+            </div>
+            
+            <!-- Online Players -->
+            <div class="bg-gray-700 p-3 border-t border-gray-600">
+                <h4 class="text-sm font-bold mb-2">
+                    <i class="fas fa-users mr-1"></i>Players Online
+                </h4>
+                <div class="space-y-2">
+                    <div>
+                        <div class="text-xs text-red-400 font-semibold">Team A</div>
+                        <ul id="teamAPlayers" class="text-xs text-gray-300 ml-2"></ul>
+                    </div>
+                    <div>
+                        <div class="text-xs text-blue-400 font-semibold">Team B</div>
+                        <ul id="teamBPlayers" class="text-xs text-gray-300 ml-2"></ul>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Chat Input -->
+            <div class="p-3 border-t border-gray-600">
+                <div class="flex mb-2">
+                    <select id="chatMode" class="flex-1 px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded-l">
+                        <option value="all">All Players</option>
+                        <option value="team">Team Only</option>
+                    </select>
+                </div>
+                <div class="flex">
+                    <input type="text" id="chatInput" placeholder="Type message..." 
+                           class="flex-1 px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded-l text-white" maxlength="100">
+                    <button id="sendChat" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded-r">
+                        <i class="fas fa-paper-plane text-xs"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Game Section - Right Side -->
+        <div class="game-section flex flex-col">
+            <!-- Team Selection Screen -->
+            <div id="teamSelection" class="flex-1 flex items-center justify-center bg-gradient-to-br from-blue-900 to-purple-900">
+                <div class="bg-black bg-opacity-70 p-8 rounded-2xl text-center">
+                    <h1 class="text-4xl font-bold mb-6 text-white">
+                        <i class="fas fa-futbol mr-3"></i>Football Shooting Game
+                    </h1>
+                    <div class="flex space-x-6 mb-6">
+                        <button id="teamA" class="team-btn px-6 py-3 bg-red-600 hover:bg-red-700 rounded-lg font-bold text-lg transition-all transform hover:scale-105">
+                            Join Team A (Red)
+                        </button>
+                        <button id="teamB" class="team-btn px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold text-lg transition-all transform hover:scale-105">
+                            Join Team B (Blue)
+                        </button>
+                    </div>
+                    <input type="text" id="playerName" placeholder="Enter your name" maxlength="15"
+                           class="px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-center w-64">
+                </div>
+            </div>
+            
+            <!-- Game Screen -->
+            <div id="gameScreen" class="flex-1 flex flex-col hidden">
+                <!-- Scoreboard -->
+                <div class="bg-gray-800 p-4 border-b border-gray-700">
+                    <div class="flex justify-between items-center max-w-4xl mx-auto">
+                        <div class="text-center">
+                            <div class="text-red-400 font-bold">Team A</div>
+                            <div id="teamAScore" class="text-3xl font-bold text-red-500">0</div>
+                        </div>
+                        <div class="text-center">
+                            <div id="gameTimer" class="text-2xl font-bold text-yellow-400">5:00</div>
+                            <div class="text-sm text-gray-400">Time Remaining</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-blue-400 font-bold">Team B</div>
+                            <div id="teamBScore" class="text-3xl font-bold text-blue-500">0</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Game Canvas -->
+                <div class="flex-1 flex items-center justify-center p-4">
+                    <canvas id="gameCanvas" width="800" height="500"></canvas>
+                </div>
+                
+                <!-- Controls Info -->
+                <div class="bg-gray-800 p-3 border-t border-gray-700 text-center">
+                    <div class="text-sm text-gray-400">
+                        <strong>Controls:</strong> 
+                        <span class="mx-2">WASD/Arrow Keys = Move</span>
+                        <span class="mx-2">Spacebar = Kick Ball</span>
+                        <span class="mx-2">Enter = Focus Chat</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        class FootballGame {
+            constructor() {
+                this.socket = io();
+                this.canvas = null;
+                this.ctx = null;
+                this.gameState = {
+                    players: {},
+                    ball: { x: 400, y: 250, vx: 0, vy: 0 },
+                    teamAScore: 0,
+                    teamBScore: 0,
+                    gameTime: 300
+                };
+                this.myPlayerId = null;
+                this.myTeam = null;
+                this.keys = {};
+                this.lastUpdateTime = 0;
+                this.chatTabMode = 'all';
+                
+                this.init();
+            }
+
+            init() {
+                this.setupEventListeners();
+                this.setupSocketListeners();
+            }
+
+            setupEventListeners() {
+                // Team selection
+                document.getElementById('teamA').addEventListener('click', () => {
+                    this.joinTeam('A');
+                });
+
+                document.getElementById('teamB').addEventListener('click', () => {
+                    this.joinTeam('B');
+                });
+
+                // Chat functionality
+                const chatInput = document.getElementById('chatInput');
+                const sendButton = document.getElementById('sendChat');
+                const chatMode = document.getElementById('chatMode');
+
+                const sendMessage = () => {
+                    const message = chatInput.value.trim();
+                    if (message) {
+                        const messageData = {
+                            message: message,
+                            mode: chatMode.value,
+                            team: this.myTeam
+                        };
+                        this.socket.emit('chatMessage', messageData);
+                        chatInput.value = '';
+                    }
+                };
+
+                sendButton.addEventListener('click', sendMessage);
+                chatInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        sendMessage();
+                    }
+                });
+
+                // Chat tabs
+                document.getElementById('allChatTab').addEventListener('click', () => {
+                    this.switchChatTab('all');
+                });
+
+                document.getElementById('teamChatTab').addEventListener('click', () => {
+                    this.switchChatTab('team');
+                });
+
+                // Voice controls
+                document.getElementById('toggleMic').addEventListener('click', () => {
+                    this.toggleMicrophone();
+                });
+
+                document.getElementById('toggleSpeaker').addEventListener('click', () => {
+                    this.toggleSpeaker();
+                });
+
+                // Keyboard controls
+                document.addEventListener('keydown', (e) => {
+                    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'SELECT') {
+                        this.keys[e.code] = true;
+                        
+                        // Focus chat on Enter
+                        if (e.key === 'Enter') {
+                            document.getElementById('chatInput').focus();
+                        }
+                        
+                        e.preventDefault();
+                    }
+                });
+
+                document.addEventListener('keyup', (e) => {
+                    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'SELECT') {
+                        this.keys[e.code] = false;
+                        e.preventDefault();
+                    }
+                });
+            }
+
+            setupSocketListeners() {
+                this.socket.on('connect', () => {
+                    console.log('Connected to server');
+                    this.displayChatMessage({
+                        playerName: '',
+                        message: 'Connected to game server',
+                        team: null
+                    });
+                });
+
+                this.socket.on('playerJoined', (data) => {
+                    this.myPlayerId = data.playerId;
+                    this.myTeam = data.team;
+                    this.showGameScreen();
+                });
+
+                this.socket.on('gameState', (state) => {
+                    this.gameState = state;
+                    this.updateUI();
+                });
+
+                this.socket.on('chatMessage', (data) => {
+                    this.displayChatMessage(data);
+                });
+
+                this.socket.on('playerList', (players) => {
+                    this.updatePlayerList(players);
+                });
+
+                this.socket.on('goal', (data) => {
+                    this.displayGoalMessage(data.team);
+                });
+
+                this.socket.on('gameEnd', (data) => {
+                    this.displayGameEnd(data);
+                });
+
+                this.socket.on('disconnect', () => {
+                    this.displayChatMessage({
+                        playerName: '',
+                        message: 'Disconnected from server',
+                        team: null
+                    });
+                });
+            }
+
+            joinTeam(team) {
+                const playerName = document.getElementById('playerName').value.trim();
+                if (!playerName) {
+                    alert('Please enter your name!');
+                    return;
+                }
+
+                this.socket.emit('joinTeam', { team, name: playerName });
+            }
+
+            showGameScreen() {
+                document.getElementById('teamSelection').classList.add('hidden');
+                document.getElementById('gameScreen').classList.remove('hidden');
+                
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                
+                this.startGameLoop();
+            }
+
+            startGameLoop() {
+                const gameLoop = (timestamp) => {
+                    if (timestamp - this.lastUpdateTime > 16) {
+                        this.handleInput();
+                        this.render();
+                        this.lastUpdateTime = timestamp;
+                    }
+                    requestAnimationFrame(gameLoop);
+                };
+                requestAnimationFrame(gameLoop);
+            }
+
+            handleInput() {
+                if (!this.myPlayerId) return;
+
+                const movement = { x: 0, y: 0 };
+                let shouldKick = false;
+
+                if (this.keys['KeyW'] || this.keys['ArrowUp']) movement.y -= 1;
+                if (this.keys['KeyS'] || this.keys['ArrowDown']) movement.y += 1;
+                if (this.keys['KeyA'] || this.keys['ArrowLeft']) movement.x -= 1;
+                if (this.keys['KeyD'] || this.keys['ArrowRight']) movement.x += 1;
+                if (this.keys['Space']) shouldKick = true;
+
+                if (movement.x !== 0 || movement.y !== 0 || shouldKick) {
+                    this.socket.emit('playerInput', { movement, kick: shouldKick });
+                }
+            }
+
+            render() {
+                if (!this.ctx) return;
+
+                const { canvas, ctx } = this;
+                
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                this.drawField();
+                this.drawPlayers();
+                this.drawBall();
+            }
+
+            drawField() {
+                const { ctx, canvas } = this;
+                
+                // Field background
+                ctx.fillStyle = '#065F46';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Field lines
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 3;
+                
+                // Outer boundary
+                ctx.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
+                
+                // Center line
+                ctx.beginPath();
+                ctx.moveTo(canvas.width / 2, 20);
+                ctx.lineTo(canvas.width / 2, canvas.height - 20);
+                ctx.stroke();
+                
+                // Center circle
+                ctx.beginPath();
+                ctx.arc(canvas.width / 2, canvas.height / 2, 60, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                // Goals
+                const goalWidth = 100;
+                const goalHeight = 15;
+                
+                // Left goal (Team A)
+                ctx.fillStyle = '#EF4444';
+                ctx.fillRect(0, (canvas.height - goalWidth) / 2, goalHeight, goalWidth);
+                ctx.strokeRect(0, (canvas.height - goalWidth) / 2, goalHeight, goalWidth);
+                
+                // Right goal (Team B)
+                ctx.fillStyle = '#3B82F6';
+                ctx.fillRect(canvas.width - goalHeight, (canvas.height - goalWidth) / 2, goalHeight, goalWidth);
+                ctx.strokeRect(canvas.width - goalHeight, (canvas.height - goalWidth) / 2, goalHeight, goalWidth);
+            }
+
+            drawPlayers() {
+                const { ctx } = this;
+                
+                Object.values(this.gameState.players).forEach(player => {
+                    ctx.fillStyle = player.team === 'A' ? '#EF4444' : '#3B82F6';
+                    ctx.beginPath();
+                    ctx.arc(player.x, player.y, 12, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.strokeStyle = player.id === this.myPlayerId ? '#FCD34D' : 'white';
+                    ctx.lineWidth = player.id === this.myPlayerId ? 3 : 2;
+                    ctx.stroke();
+                    
+                    ctx.fillStyle = 'white';
+                    ctx.font = '10px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(player.name, player.x, player.y - 20);
+                });
+            }
+
+            drawBall() {
+                const { ctx } = this;
+                const ball = this.gameState.ball;
+                
+                // Ball shadow
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.beginPath();
+                ctx.ellipse(ball.x + 2, ball.y + 2, 8, 6, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Ball
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(ball.x, ball.y, 8, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            updateUI() {
+                document.getElementById('teamAScore').textContent = this.gameState.teamAScore;
+                document.getElementById('teamBScore').textContent = this.gameState.teamBScore;
+                
+                const minutes = Math.floor(this.gameState.gameTime / 60);
+                const seconds = this.gameState.gameTime % 60;
+                document.getElementById('gameTimer').textContent = 
+                    `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }
+
+            displayChatMessage(data) {
+                const chatMessages = document.getElementById('chatMessages');
+                const messageElement = document.createElement('div');
+                
+                let messageClass = 'system-msg';
+                if (data.team === 'A') messageClass = 'team-a-msg';
+                else if (data.team === 'B') messageClass = 'team-b-msg';
+                
+                messageElement.className = `${messageClass} text-xs`;
+                
+                const time = new Date().toLocaleTimeString('en-US', { 
+                    hour12: false, 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                });
+                
+                if (data.playerName) {
+                    messageElement.innerHTML = `<span class="text-gray-400">[${time}]</span> <strong>${data.playerName}:</strong> ${data.message}`;
+                } else {
+                    messageElement.innerHTML = `<span class="text-gray-400">[${time}]</span> <i class="fas fa-info-circle mr-1"></i>${data.message}`;
+                }
+                
+                chatMessages.appendChild(messageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                
+                if (chatMessages.children.length > 100) {
+                    chatMessages.removeChild(chatMessages.firstChild);
+                }
+            }
+
+            updatePlayerList(players) {
+                const teamAList = document.getElementById('teamAPlayers');
+                const teamBList = document.getElementById('teamBPlayers');
+                
+                teamAList.innerHTML = '';
+                teamBList.innerHTML = '';
+                
+                Object.values(players).forEach(player => {
+                    const li = document.createElement('li');
+                    li.textContent = player.name;
+                    li.className = 'text-xs py-1';
+                    
+                    if (player.team === 'A') {
+                        teamAList.appendChild(li);
+                    } else {
+                        teamBList.appendChild(li);
+                    }
+                });
+            }
+
+            switchChatTab(mode) {
+                this.chatTabMode = mode;
+                const allTab = document.getElementById('allChatTab');
+                const teamTab = document.getElementById('teamChatTab');
+                
+                if (mode === 'all') {
+                    allTab.classList.add('bg-blue-600');
+                    allTab.classList.remove('bg-gray-600');
+                    teamTab.classList.add('bg-gray-600');
+                    teamTab.classList.remove('bg-blue-600');
+                } else {
+                    teamTab.classList.add('bg-blue-600');
+                    teamTab.classList.remove('bg-gray-600');
+                    allTab.classList.add('bg-gray-600');
+                    allTab.classList.remove('bg-blue-600');
+                }
+                
+                document.getElementById('chatMode').value = mode;
+            }
+
+            toggleMicrophone() {
+                const micBtn = document.getElementById('toggleMic');
+                const icon = micBtn.querySelector('i');
+                const text = micBtn.querySelector('span');
+                
+                if (micBtn.classList.contains('bg-red-600')) {
+                    micBtn.classList.replace('bg-red-600', 'bg-green-600');
+                    icon.classList.replace('fa-microphone-slash', 'fa-microphone');
+                    text.textContent = 'Mic On';
+                    micBtn.classList.add('voice-indicator');
+                } else {
+                    micBtn.classList.replace('bg-green-600', 'bg-red-600');
+                    icon.classList.replace('fa-microphone', 'fa-microphone-slash');
+                    text.textContent = 'Mic Off';
+                    micBtn.classList.remove('voice-indicator');
+                }
+            }
+
+            toggleSpeaker() {
+                const speakerBtn = document.getElementById('toggleSpeaker');
+                const icon = speakerBtn.querySelector('i');
+                const text = speakerBtn.querySelector('span');
+                
+                if (speakerBtn.classList.contains('bg-green-600')) {
+                    speakerBtn.classList.replace('bg-green-600', 'bg-red-600');
+                    icon.classList.replace('fa-volume-up', 'fa-volume-mute');
+                    text.textContent = 'Off';
+                } else {
+                    speakerBtn.classList.replace('bg-red-600', 'bg-green-600');
+                    icon.classList.replace('fa-volume-mute', 'fa-volume-up');
+                    text.textContent = 'On';
+                }
+            }
+
+            displayGoalMessage(team) {
+                const notification = document.createElement('div');
+                notification.style.cssText = `
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: ${team === 'A' ? '#EF4444' : '#3B82F6'};
+                    color: white;
+                    padding: 2rem 4rem;
+                    border-radius: 15px;
+                    font-size: 2rem;
+                    font-weight: bold;
+                    z-index: 1000;
+                    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+                `;
+                
+                notification.className = 'goal-animation';
+                notification.innerHTML = `<i class="fas fa-futbol mr-3"></i>GOAL! Team ${team} Scores!`;
+                document.body.appendChild(notification);
+                
+                this.displayChatMessage({
+                    playerName: '',
+                    message: `🚀 GOAL! Team ${team} scored!`,
+                    team: null
+                });
+                
+                setTimeout(() => {
+                    if (document.body.contains(notification)) {
+                        document.body.removeChild(notification);
+                    }
+                }, 3000);
+            }
+
+            displayGameEnd(data) {
+                const winner = data.teamAScore > data.teamBScore ? 'Team A' : 
+                              data.teamBScore > data.teamAScore ? 'Team B' : 'Draw';
+                
+                this.displayChatMessage({
+                    playerName: '',
+                    message: `🏆 Game Over! ${winner === 'Draw' ? 'It\'s a draw!' : `${winner} wins!`} Final Score: ${data.teamAScore} - ${data.teamBScore}`,
+                    team: null
+                });
+                
+                alert(`Game Over!\n${winner === 'Draw' ? 'It\'s a draw!' : `${winner} wins!`}\nFinal Score: ${data.teamAScore} - ${data.teamBScore}`);
+            }
+        }
+
+        // Initialize game when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new FootballGame();
+        });
+    </script>
+</body>
+</html>
