@@ -19,7 +19,7 @@ export class GameServer {
   constructor(server: Server) {
     this.io = new SocketIOServer(server, {
       cors: {
-        origin: "*",
+        origin: "https://io-game-kzx1ni9qr-editingking2977-gmailcoms-projects.vercel.app",
         methods: ["GET", "POST"]
       }
     });
